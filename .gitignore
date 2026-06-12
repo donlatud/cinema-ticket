@@ -49,3 +49,7 @@ Thumbs.db
 # Test & coverage
 coverage/
 *.coverprofile
+
+
+# Local planning docs
+cinema -ticket-flow.MD
