@@ -9,6 +9,7 @@ import (
 
 	"github.com/cinema-booking/backend/internal/lock"
 	"github.com/cinema-booking/backend/internal/model"
+	"github.com/cinema-booking/backend/internal/realtime"
 	"github.com/cinema-booking/backend/internal/repository"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -32,6 +33,7 @@ type Service struct {
 	bookings  *repository.BookingRepository
 	movies    *repository.MovieRepository
 	lock      *lock.RedisLock
+	hub       *realtime.Hub
 }
 
 func NewService(
@@ -40,6 +42,7 @@ func NewService(
 	bookings *repository.BookingRepository,
 	movies *repository.MovieRepository,
 	seatLock *lock.RedisLock,
+	hub *realtime.Hub,
 ) *Service {
 	return &Service{
 		showtimes: showtimes,
@@ -47,6 +50,7 @@ func NewService(
 		bookings:  bookings,
 		movies:    movies,
 		lock:      seatLock,
+		hub:       hub,
 	}
 }
 
@@ -164,6 +168,8 @@ func (s *Service) LockSeats(ctx context.Context, showtimeID, userID primitive.Ob
 		lockedMongo = append(lockedMongo, seatNo)
 	}
 
+	s.broadcastSeats(showtimeID, lockedMongo, model.SeatLocked)
+
 	return booking, nil
 }
 
@@ -186,6 +192,8 @@ func (s *Service) Pay(ctx context.Context, bookingID, userID primitive.ObjectID)
 		return nil, err
 	}
 
+	s.broadcastSeats(booking.ShowtimeID, booking.SeatNos, model.SeatBooked)
+
 	booking.Status = model.BookingPaid
 	booking.PaidAt = &now
 	return booking, nil
@@ -203,6 +211,8 @@ func (s *Service) Cancel(ctx context.Context, bookingID, userID primitive.Object
 	if err := s.bookings.UpdateStatus(ctx, booking.ID, model.BookingExpired, nil); err != nil {
 		return nil, err
 	}
+
+	s.broadcastSeats(booking.ShowtimeID, booking.SeatNos, model.SeatAvailable)
 
 	booking.Status = model.BookingExpired
 	return booking, nil
@@ -225,6 +235,7 @@ func (s *Service) ExpirePendingBookings(ctx context.Context) error {
 		if err := s.bookings.UpdateStatus(ctx, booking.ID, model.BookingExpired, nil); err != nil {
 			return err
 		}
+		s.broadcastSeats(booking.ShowtimeID, booking.SeatNos, model.SeatAvailable)
 		log.Printf("BOOKING_TIMEOUT booking_id=%s showtime_id=%s seats=%v",
 			booking.ID.Hex(), booking.ShowtimeID.Hex(), booking.SeatNos)
 	}
@@ -277,4 +288,14 @@ func (s *Service) rollbackLock(ctx context.Context, showtimeID primitive.ObjectI
 	}
 	s.releaseRedisLocks(ctx, showtimeID.Hex(), booking.SeatNos, lockTokens)
 	_ = s.bookings.UpdateStatus(ctx, booking.ID, model.BookingExpired, nil)
+}
+
+func (s *Service) broadcastSeats(showtimeID primitive.ObjectID, seatNos []string, status string) {
+	if s.hub == nil {
+		return
+	}
+	showtimeHex := showtimeID.Hex()
+	for _, seatNo := range seatNos {
+		s.hub.BroadcastSeatUpdate(showtimeHex, seatNo, status)
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/cinema-booking/backend/internal/auth"
 	bookinghandler "github.com/cinema-booking/backend/internal/booking"
 	"github.com/cinema-booking/backend/internal/model"
+	"github.com/cinema-booking/backend/internal/realtime"
 	"github.com/cinema-booking/backend/internal/seat"
 	"github.com/gin-gonic/gin"
 )
@@ -15,6 +16,7 @@ func Setup(
 	jwtService *auth.JWTService,
 	seatHandler *seat.Handler,
 	bookingHandler *bookinghandler.Handler,
+	wsHandler *realtime.Handler,
 ) *gin.Engine {
 	r := gin.Default()
 	r.Use(corsMiddleware())
@@ -22,6 +24,7 @@ func Setup(
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	r.GET("/ws", wsHandler.ServeWS)
 
 	api := r.Group("/api")
 	api.POST("/auth/login", authHandler.Login)

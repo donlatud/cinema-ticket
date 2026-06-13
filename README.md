@@ -53,3 +53,17 @@ $BASE = "http://localhost:8080"
 ```
 
 Expected: exactly one `201 Created`, the rest `409 Conflict`.
+
+## Phase 6 Test (WebSocket Real-time)
+
+1. Restart backend and frontend
+2. Open `http://localhost:5173/` → pick a showtime → **View seats**
+3. Open the **same seat map URL** in a second browser tab (or incognito)
+4. In tab A: select a seat → **Confirm seat selection**
+5. Tab B should show that seat turn **yellow (LOCKED)** without refreshing
+
+Ensure `frontend/.env` includes:
+
+```
+VITE_WS_URL=ws://localhost:8080
+```
