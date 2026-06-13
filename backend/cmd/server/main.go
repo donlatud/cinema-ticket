@@ -5,10 +5,12 @@ import (
 	"log"
 
 	"github.com/cinema-booking/backend/internal/auth"
+	"github.com/cinema-booking/backend/internal/booking"
 	"github.com/cinema-booking/backend/internal/config"
 	"github.com/cinema-booking/backend/internal/database"
 	"github.com/cinema-booking/backend/internal/repository"
 	"github.com/cinema-booking/backend/internal/router"
+	"github.com/cinema-booking/backend/internal/seat"
 	"github.com/joho/godotenv"
 )
 
@@ -35,7 +37,18 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	authHandler := auth.NewHandler(verifier, jwtService, userRepo)
 
-	r := router.Setup(authHandler, jwtService)
+	showtimeRepo := repository.NewShowtimeRepository(db)
+	seatRepo := repository.NewSeatRepository(db)
+	bookingRepo := repository.NewBookingRepository(db)
+	movieRepo := repository.NewMovieRepository(db)
+
+	bookingService := booking.NewService(showtimeRepo, seatRepo, bookingRepo, movieRepo)
+	booking.StartExpiryWorker(ctx, bookingService)
+
+	seatHandler := seat.NewHandler(bookingService)
+	bookingHandler := booking.NewHandler(bookingService)
+
+	r := router.Setup(authHandler, jwtService, seatHandler, bookingHandler)
 
 	log.Printf("server listening on :%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {

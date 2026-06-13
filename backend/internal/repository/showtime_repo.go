@@ -38,3 +38,17 @@ func (r *ShowtimeRepository) FindByID(ctx context.Context, id primitive.ObjectID
 func (r *ShowtimeRepository) Count(ctx context.Context) (int64, error) {
 	return r.col.CountDocuments(ctx, bson.M{})
 }
+
+func (r *ShowtimeRepository) FindAll(ctx context.Context) ([]model.Showtime, error) {
+	cursor, err := r.col.Find(ctx, bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var showtimes []model.Showtime
+	if err := cursor.All(ctx, &showtimes); err != nil {
+		return nil, err
+	}
+	return showtimes, nil
+}
