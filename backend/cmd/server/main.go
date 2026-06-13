@@ -1,28 +1,44 @@
 package main
 
 import (
+	"context"
 	"log"
-	"os"
 
-	"github.com/gin-gonic/gin"
+	"github.com/cinema-booking/backend/internal/auth"
+	"github.com/cinema-booking/backend/internal/config"
+	"github.com/cinema-booking/backend/internal/database"
+	"github.com/cinema-booking/backend/internal/repository"
+	"github.com/cinema-booking/backend/internal/router"
 	"github.com/joho/godotenv"
 )
 
 func main() {
 	_ = godotenv.Load()
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	r := gin.Default()
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
-	})
+	ctx := context.Background()
+	db, err := database.Connect(ctx, cfg.MongoURI)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	log.Printf("server listening on :%s", port)
-	if err := r.Run(":" + port); err != nil {
+	verifier, err := auth.NewFirebaseVerifier(ctx, cfg.FirebaseCredentials)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	jwtService := auth.NewJWTService(cfg.JWTSecret)
+	userRepo := repository.NewUserRepository(db)
+	authHandler := auth.NewHandler(verifier, jwtService, userRepo)
+
+	r := router.Setup(authHandler, jwtService)
+
+	log.Printf("server listening on :%s", cfg.Port)
+	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatal(err)
 	}
 }
