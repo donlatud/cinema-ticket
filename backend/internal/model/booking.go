@@ -17,6 +17,7 @@ type Booking struct {
 	UserID     primitive.ObjectID `bson:"user_id" json:"user_id"`
 	ShowtimeID primitive.ObjectID `bson:"showtime_id" json:"showtime_id"`
 	SeatNos    []string           `bson:"seat_nos" json:"seat_nos"`
+	LockTokens map[string]string  `bson:"lock_tokens,omitempty" json:"lock_tokens,omitempty"`
 	Status     string             `bson:"status" json:"status"`
 	Amount     float64            `bson:"amount" json:"amount"`
 	CreatedAt  time.Time          `bson:"created_at" json:"created_at"`

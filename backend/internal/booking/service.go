@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
+	"github.com/cinema-booking/backend/internal/lock"
 	"github.com/cinema-booking/backend/internal/model"
 	"github.com/cinema-booking/backend/internal/repository"
-	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -16,13 +17,13 @@ import (
 const bookingTTL = 5 * time.Minute
 
 var (
-	ErrShowtimeNotFound   = errors.New("showtime not found")
-	ErrSeatNotFound       = errors.New("seat not found")
-	ErrSeatUnavailable    = errors.New("seat unavailable")
-	ErrBookingNotFound    = errors.New("booking not found")
-	ErrBookingForbidden   = errors.New("booking forbidden")
-	ErrBookingNotPending  = errors.New("booking not pending")
-	ErrBookingExpired     = errors.New("booking expired")
+	ErrShowtimeNotFound  = errors.New("showtime not found")
+	ErrSeatNotFound      = errors.New("seat not found")
+	ErrSeatUnavailable   = errors.New("seat unavailable")
+	ErrBookingNotFound   = errors.New("booking not found")
+	ErrBookingForbidden  = errors.New("booking forbidden")
+	ErrBookingNotPending = errors.New("booking not pending")
+	ErrBookingExpired    = errors.New("booking expired")
 )
 
 type Service struct {
@@ -30,6 +31,7 @@ type Service struct {
 	seats     *repository.SeatRepository
 	bookings  *repository.BookingRepository
 	movies    *repository.MovieRepository
+	lock      *lock.RedisLock
 }
 
 func NewService(
@@ -37,22 +39,24 @@ func NewService(
 	seats *repository.SeatRepository,
 	bookings *repository.BookingRepository,
 	movies *repository.MovieRepository,
+	seatLock *lock.RedisLock,
 ) *Service {
 	return &Service{
 		showtimes: showtimes,
 		seats:     seats,
 		bookings:  bookings,
 		movies:    movies,
+		lock:      seatLock,
 	}
 }
 
 type ShowtimeListItem struct {
-	ID        string    `json:"id"`
-	MovieID   string    `json:"movie_id"`
-	MovieTitle string   `json:"movie_title"`
-	StartTime time.Time `json:"start_time"`
-	Screen    string    `json:"screen"`
-	Price     float64   `json:"price"`
+	ID         string    `json:"id"`
+	MovieID    string    `json:"movie_id"`
+	MovieTitle string    `json:"movie_title"`
+	StartTime  time.Time `json:"start_time"`
+	Screen     string    `json:"screen"`
+	Price      float64   `json:"price"`
 }
 
 func (s *Service) ListShowtimes(ctx context.Context) ([]ShowtimeListItem, error) {
@@ -105,36 +109,59 @@ func (s *Service) LockSeats(ctx context.Context, showtimeID, userID primitive.Ob
 	if len(seats) != len(seatNos) {
 		return nil, ErrSeatNotFound
 	}
+	for _, seat := range seats {
+		if seat.Status != model.SeatAvailable {
+			return nil, fmt.Errorf("%w: %s", ErrSeatUnavailable, seat.SeatNo)
+		}
+	}
+
+	showtimeIDHex := showtimeID.Hex()
+	userIDHex := userID.Hex()
+	lockTokens := make(map[string]string, len(seatNos))
+	acquiredRedis := make([]string, 0, len(seatNos))
+
+	for _, seatNo := range seatNos {
+		token, err := s.lock.AcquireLock(ctx, showtimeIDHex, seatNo, userIDHex)
+		if err != nil {
+			s.releaseRedisLocks(ctx, showtimeIDHex, acquiredRedis, lockTokens)
+			if errors.Is(err, lock.ErrLockNotAcquired) {
+				return nil, fmt.Errorf("%w: %s", ErrSeatUnavailable, seatNo)
+			}
+			return nil, err
+		}
+		lockTokens[seatNo] = token
+		acquiredRedis = append(acquiredRedis, seatNo)
+	}
 
 	now := time.Now().UTC()
 	expiresAt := now.Add(bookingTTL)
-	lockToken := uuid.New().String()
-
 	booking := &model.Booking{
 		UserID:     userID,
 		ShowtimeID: showtimeID,
 		SeatNos:    seatNos,
+		LockTokens: lockTokens,
 		Status:     model.BookingPending,
 		Amount:     showtime.Price * float64(len(seatNos)),
 		CreatedAt:  now,
 		ExpiresAt:  &expiresAt,
 	}
 	if err := s.bookings.Insert(ctx, booking); err != nil {
+		s.releaseRedisLocks(ctx, showtimeIDHex, acquiredRedis, lockTokens)
 		return nil, err
 	}
 
-	locked := make([]string, 0, len(seatNos))
+	lockedMongo := make([]string, 0, len(seatNos))
 	for _, seatNo := range seatNos {
-		ok, err := s.seats.LockSeat(ctx, showtimeID, seatNo, userID, booking.ID, now, lockToken)
+		ok, err := s.seats.LockSeat(ctx, showtimeID, seatNo, userID, booking.ID, now, lockTokens[seatNo])
 		if err != nil {
-			s.rollbackLocks(ctx, showtimeID, locked, booking.ID)
+			s.rollbackLock(ctx, showtimeID, lockedMongo, booking, lockTokens)
 			return nil, err
 		}
 		if !ok {
-			s.rollbackLocks(ctx, showtimeID, locked, booking.ID)
+			s.rollbackLock(ctx, showtimeID, lockedMongo, booking, lockTokens)
 			return nil, fmt.Errorf("%w: %s", ErrSeatUnavailable, seatNo)
 		}
-		locked = append(locked, seatNo)
+		lockedMongo = append(lockedMongo, seatNo)
 	}
 
 	return booking, nil
@@ -152,6 +179,8 @@ func (s *Service) Pay(ctx context.Context, bookingID, userID primitive.ObjectID)
 			return nil, err
 		}
 	}
+
+	s.releaseRedisLocks(ctx, booking.ShowtimeID.Hex(), booking.SeatNos, booking.LockTokens)
 
 	if err := s.bookings.UpdateStatus(ctx, booking.ID, model.BookingPaid, &now); err != nil {
 		return nil, err
@@ -196,6 +225,8 @@ func (s *Service) ExpirePendingBookings(ctx context.Context) error {
 		if err := s.bookings.UpdateStatus(ctx, booking.ID, model.BookingExpired, nil); err != nil {
 			return err
 		}
+		log.Printf("BOOKING_TIMEOUT booking_id=%s showtime_id=%s seats=%v",
+			booking.ID.Hex(), booking.ShowtimeID.Hex(), booking.SeatNos)
 	}
 	return nil
 }
@@ -221,6 +252,7 @@ func (s *Service) getOwnedPendingBooking(ctx context.Context, bookingID, userID 
 }
 
 func (s *Service) releaseBookingSeats(ctx context.Context, booking *model.Booking) error {
+	s.releaseRedisLocks(ctx, booking.ShowtimeID.Hex(), booking.SeatNos, booking.LockTokens)
 	for _, seatNo := range booking.SeatNos {
 		if err := s.seats.UnlockSeat(ctx, booking.ShowtimeID, seatNo, booking.ID); err != nil {
 			return err
@@ -229,9 +261,20 @@ func (s *Service) releaseBookingSeats(ctx context.Context, booking *model.Bookin
 	return nil
 }
 
-func (s *Service) rollbackLocks(ctx context.Context, showtimeID primitive.ObjectID, seatNos []string, bookingID primitive.ObjectID) {
+func (s *Service) releaseRedisLocks(ctx context.Context, showtimeID string, seatNos []string, tokens map[string]string) {
 	for _, seatNo := range seatNos {
-		_ = s.seats.UnlockSeat(ctx, showtimeID, seatNo, bookingID)
+		token := tokens[seatNo]
+		if token == "" {
+			continue
+		}
+		_ = s.lock.ReleaseLock(ctx, showtimeID, seatNo, token)
 	}
-	_ = s.bookings.UpdateStatus(ctx, bookingID, model.BookingExpired, nil)
+}
+
+func (s *Service) rollbackLock(ctx context.Context, showtimeID primitive.ObjectID, lockedMongo []string, booking *model.Booking, lockTokens map[string]string) {
+	for _, seatNo := range lockedMongo {
+		_ = s.seats.UnlockSeat(ctx, showtimeID, seatNo, booking.ID)
+	}
+	s.releaseRedisLocks(ctx, showtimeID.Hex(), booking.SeatNos, lockTokens)
+	_ = s.bookings.UpdateStatus(ctx, booking.ID, model.BookingExpired, nil)
 }
