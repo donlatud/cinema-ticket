@@ -19,9 +19,10 @@ func Setup(
 	bookingHandler *bookinghandler.Handler,
 	wsHandler *realtime.Handler,
 	adminHandler *admin.Handler,
+	corsOrigins []string,
 ) *gin.Engine {
 	r := gin.Default()
-	r.Use(corsMiddleware())
+	r.Use(corsMiddleware(corsOrigins))
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -48,9 +49,17 @@ func Setup(
 	return r
 }
 
-func corsMiddleware() gin.HandlerFunc {
+func corsMiddleware(allowedOrigins []string) gin.HandlerFunc {
+	originSet := make(map[string]struct{}, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		originSet[origin] = struct{}{}
+	}
+
 	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "http://localhost:5173")
+		origin := c.GetHeader("Origin")
+		if _, ok := originSet[origin]; ok {
+			c.Header("Access-Control-Allow-Origin", origin)
+		}
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
 

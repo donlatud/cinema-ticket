@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { loginWithGoogle } from '@/firebase'
 import { useAuthStore } from '@/stores/auth'
 import LoginPageLayout from '@/components/auth/login/LoginPageLayout.vue'
@@ -11,6 +11,7 @@ import LoginSignInAction from '@/components/auth/login/LoginSignInAction.vue'
 import LoginFooter from '@/components/auth/login/LoginFooter.vue'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const status = ref('idle')
@@ -30,7 +31,8 @@ async function handleGoogleSignIn() {
   try {
     const idToken = await loginWithGoogle()
     await authStore.loginWithIdToken(idToken)
-    router.push('/')
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
+    router.push(redirect)
   } catch {
     status.value = 'error'
     errorMessage.value = 'Sign-in failed. Please try again.'

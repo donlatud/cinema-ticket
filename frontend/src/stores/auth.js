@@ -22,6 +22,16 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref(loadStoredUser())
 
   const isAuthenticated = computed(() => Boolean(token.value))
+  const isAdmin = computed(() => user.value?.role === 'ADMIN')
+  const displayName = computed(() => user.value?.name || user.value?.email || 'Guest')
+  const initials = computed(() => {
+    const source = user.value?.name || user.value?.email || '?'
+    return source
+      .split(/\s+/)
+      .map((part) => part.charAt(0).toUpperCase())
+      .slice(0, 2)
+      .join('')
+  })
 
   async function loginWithIdToken(idToken) {
     const data = await loginApi(idToken)
@@ -42,6 +52,9 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     user,
     isAuthenticated,
+    isAdmin,
+    displayName,
+    initials,
     loginWithIdToken,
     logout,
   }
