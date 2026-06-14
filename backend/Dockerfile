@@ -6,9 +6,8 @@ COPY . .
 RUN CGO_ENABLED=0 go build -o server ./cmd/server
 
 FROM alpine:latest
+RUN apk add --no-cache wget
 WORKDIR /app
 COPY --from=builder /app/server /app/server
-# Placeholder until Firebase credentials are added in Phase 3
-RUN echo '{}' > /app/firebase-key.json
 EXPOSE 8080
 CMD ["/app/server"]

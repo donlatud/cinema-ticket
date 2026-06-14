@@ -8,12 +8,14 @@ import SeatMapHeader from '@/components/seatmap/SeatMapHeader.vue'
 import SeatMapLegend from '@/components/seatmap/SeatMapLegend.vue'
 import SeatMapPageLayout from '@/components/seatmap/SeatMapPageLayout.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useBookingStore } from '@/stores/booking'
 import { useSeatmapStore } from '@/stores/seatmap'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const seatmap = useSeatmapStore()
+const bookingStore = useBookingStore()
 
 const showtimeId = computed(() => route.params.id)
 const successMessage = ref('')
@@ -58,7 +60,8 @@ async function handleLock() {
   successMessage.value = ''
   const booking = await seatmap.lockSelected(showtimeId.value)
   if (booking) {
-    successMessage.value = `Seats ${booking.seat_nos.join(', ')} locked successfully.`
+    bookingStore.setCurrent(booking)
+    router.push({ name: 'payment', params: { id: booking.id } })
   }
 }
 </script>

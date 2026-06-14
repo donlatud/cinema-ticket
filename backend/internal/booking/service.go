@@ -63,12 +63,14 @@ func NewService(
 }
 
 type ShowtimeListItem struct {
-	ID         string    `json:"id"`
-	MovieID    string    `json:"movie_id"`
-	MovieTitle string    `json:"movie_title"`
-	StartTime  time.Time `json:"start_time"`
-	Screen     string    `json:"screen"`
-	Price      float64   `json:"price"`
+	ID          string    `json:"id"`
+	MovieID     string    `json:"movie_id"`
+	MovieTitle  string    `json:"movie_title"`
+	MoviePoster string    `json:"movie_poster"`
+	DurationMin int       `json:"duration_min"`
+	StartTime   time.Time `json:"start_time"`
+	Screen      string    `json:"screen"`
+	Price       float64   `json:"price"`
 }
 
 func (s *Service) ListShowtimes(ctx context.Context) ([]ShowtimeListItem, error) {
@@ -76,6 +78,8 @@ func (s *Service) ListShowtimes(ctx context.Context) ([]ShowtimeListItem, error)
 	if err != nil {
 		return nil, err
 	}
+
+	movieCache := make(map[primitive.ObjectID]*model.Movie)
 
 	items := make([]ShowtimeListItem, 0, len(showtimes))
 	for _, st := range showtimes {
@@ -86,10 +90,20 @@ func (s *Service) ListShowtimes(ctx context.Context) ([]ShowtimeListItem, error)
 			Screen:    st.Screen,
 			Price:     st.Price,
 		}
-		movie, err := s.movies.FindByID(ctx, st.MovieID)
-		if err == nil {
-			item.MovieTitle = movie.Title
+
+		movie, ok := movieCache[st.MovieID]
+		if !ok {
+			if found, err := s.movies.FindByID(ctx, st.MovieID); err == nil {
+				movie = found
+				movieCache[st.MovieID] = found
+			}
 		}
+		if movie != nil {
+			item.MovieTitle = movie.Title
+			item.MoviePoster = movie.PosterURL
+			item.DurationMin = movie.DurationMin
+		}
+
 		items = append(items, item)
 	}
 	return items, nil

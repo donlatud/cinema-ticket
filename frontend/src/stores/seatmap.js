@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { fetchSeats, fetchShowtimes, lockSeats } from '@/api/showtimes'
+import { resolveWsBaseUrl } from '@/utils/ws'
 
 export const useSeatmapStore = defineStore('seatmap', {
   state: () => ({
@@ -67,7 +68,7 @@ export const useSeatmapStore = defineStore('seatmap', {
     connectWebSocket(showtimeId) {
       this.disconnectWebSocket()
 
-      const baseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8080'
+      const baseUrl = resolveWsBaseUrl()
       const ws = new WebSocket(`${baseUrl}/ws?showtime_id=${showtimeId}`)
 
       ws.onmessage = (event) => {

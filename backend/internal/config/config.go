@@ -17,6 +17,7 @@ type Config struct {
 	RedisTLS            bool
 	LockTTLSeconds      int
 	RabbitMQURL         string
+	CORSOrigins         []string
 }
 
 func Load() (*Config, error) {
@@ -49,9 +50,6 @@ func Load() (*Config, error) {
 	redisAddr = strings.TrimPrefix(redisAddr, "rediss://")
 
 	redisPassword := os.Getenv("REDIS_PASSWORD")
-	if redisPassword == "" {
-		return nil, fmt.Errorf("REDIS_PASSWORD is required")
-	}
 
 	lockTTLSeconds := 300
 	if value := os.Getenv("LOCK_TTL_SECONDS"); value != "" {
@@ -72,6 +70,11 @@ func Load() (*Config, error) {
 		port = "8080"
 	}
 
+	corsOrigins := []string{"http://localhost:5173", "http://localhost:3000"}
+	if value := os.Getenv("CORS_ORIGINS"); value != "" {
+		corsOrigins = splitCSV(value)
+	}
+
 	return &Config{
 		Port:                port,
 		MongoURI:            mongoURI,
@@ -82,5 +85,18 @@ func Load() (*Config, error) {
 		RedisTLS:            useTLS,
 		LockTTLSeconds:      lockTTLSeconds,
 		RabbitMQURL:         rabbitMQURL,
+		CORSOrigins:         corsOrigins,
 	}, nil
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			origins = append(origins, trimmed)
+		}
+	}
+	return origins
 }

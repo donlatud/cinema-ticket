@@ -16,6 +16,7 @@ import (
 	"github.com/cinema-booking/backend/internal/repository"
 	"github.com/cinema-booking/backend/internal/router"
 	"github.com/cinema-booking/backend/internal/seat"
+	"github.com/cinema-booking/backend/internal/seed"
 	"github.com/joho/godotenv"
 )
 
@@ -30,6 +31,10 @@ func main() {
 	ctx := context.Background()
 	db, err := database.Connect(ctx, cfg.MongoURI)
 	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := seed.Run(ctx, db); err != nil {
 		log.Fatal(err)
 	}
 
@@ -83,7 +88,7 @@ func main() {
 	bookingHandler := booking.NewHandler(bookingService)
 	wsHandler := realtime.NewHandler(hub)
 
-	r := router.Setup(authHandler, jwtService, seatHandler, bookingHandler, wsHandler, adminHandler)
+	r := router.Setup(authHandler, jwtService, seatHandler, bookingHandler, wsHandler, adminHandler, cfg.CORSOrigins)
 
 	log.Printf("server listening on :%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {

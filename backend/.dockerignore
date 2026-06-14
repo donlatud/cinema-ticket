@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+firebase-key.json
+server
+server.exe
+*.exe
