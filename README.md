@@ -91,3 +91,34 @@ Queues:
 4. Check server log for `mock notification: booking ... confirmed`
 5. Open MongoDB Compass → `audit_logs` collection → see `BOOKING_SUCCESS`
 6. CloudAMQP dashboard → Queues → messages published/consumed on `booking.success`
+
+## Phase 8 — Admin API + RBAC
+
+Protected by `RequireRole("ADMIN")` on all `/api/admin/*` routes.
+
+```
+GET /api/admin/bookings?movie_id=&date=&user_id=   # at least one filter
+GET /api/admin/audit-logs?event=&from=&to=
+```
+
+### Reading order (Phase 8 files)
+
+1. `internal/auth/middleware.go` — JWT + `RequireRole("ADMIN")`
+2. `internal/repository/booking_repo.go` — `FindAdmin`
+3. `internal/repository/showtime_repo.go` — filter by movie/date
+4. `internal/repository/audit_repo.go` — `Find` with filters
+5. `internal/admin/dashboard.go` — join movie name + business logic
+6. `internal/admin/handler.go` — HTTP + query param parsing
+7. `internal/router/router.go` — admin route group
+8. `cmd/server/main.go` — wiring
+
+### Phase 8 Test
+
+```powershell
+# USER token → 403
+curl "$BASE/api/admin/bookings?user_id=xxx" -H "Authorization: Bearer $USER_TOKEN"
+
+# ADMIN token → 200
+curl "$BASE/api/admin/bookings?date=2026-06-14" -H "Authorization: Bearer $ADMIN_TOKEN"
+curl "$BASE/api/admin/audit-logs?event=BOOKING_SUCCESS" -H "Authorization: Bearer $ADMIN_TOKEN"
+```

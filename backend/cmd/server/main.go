@@ -65,6 +65,8 @@ func main() {
 	auditRepo := repository.NewAuditRepository(db)
 
 	auditService := admin.NewAuditService(auditRepo)
+	dashboardService := admin.NewDashboardService(bookingRepo, showtimeRepo, movieRepo, userRepo, auditRepo)
+	adminHandler := admin.NewHandler(dashboardService)
 	producer := mq.NewProducer(mqClient.Channel())
 	consumer := mq.NewConsumer(mqClient.Channel(), auditService)
 	consumer.Start(ctx)
@@ -81,7 +83,7 @@ func main() {
 	bookingHandler := booking.NewHandler(bookingService)
 	wsHandler := realtime.NewHandler(hub)
 
-	r := router.Setup(authHandler, jwtService, seatHandler, bookingHandler, wsHandler)
+	r := router.Setup(authHandler, jwtService, seatHandler, bookingHandler, wsHandler, adminHandler)
 
 	log.Printf("server listening on :%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
