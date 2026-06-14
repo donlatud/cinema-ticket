@@ -5,13 +5,15 @@ import (
 	"log"
 	"time"
 
+	"github.com/cinema-booking/backend/internal/admin"
 	"github.com/cinema-booking/backend/internal/auth"
 	"github.com/cinema-booking/backend/internal/booking"
 	"github.com/cinema-booking/backend/internal/config"
 	"github.com/cinema-booking/backend/internal/database"
 	"github.com/cinema-booking/backend/internal/lock"
-	"github.com/cinema-booking/backend/internal/repository"
+	"github.com/cinema-booking/backend/internal/mq"
 	"github.com/cinema-booking/backend/internal/realtime"
+	"github.com/cinema-booking/backend/internal/repository"
 	"github.com/cinema-booking/backend/internal/router"
 	"github.com/cinema-booking/backend/internal/seat"
 	"github.com/joho/godotenv"
@@ -41,6 +43,12 @@ func main() {
 	}
 	defer redisClient.Close()
 
+	mqClient, err := mq.NewClient(cfg.RabbitMQURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer mqClient.Close()
+
 	verifier, err := auth.NewFirebaseVerifier(ctx, cfg.FirebaseCredentials)
 	if err != nil {
 		log.Fatal(err)
@@ -54,10 +62,19 @@ func main() {
 	seatRepo := repository.NewSeatRepository(db)
 	bookingRepo := repository.NewBookingRepository(db)
 	movieRepo := repository.NewMovieRepository(db)
+	auditRepo := repository.NewAuditRepository(db)
+
+	auditService := admin.NewAuditService(auditRepo)
+	producer := mq.NewProducer(mqClient.Channel())
+	consumer := mq.NewConsumer(mqClient.Channel(), auditService)
+	consumer.Start(ctx)
 
 	seatLock := lock.NewRedisLock(redisClient, time.Duration(cfg.LockTTLSeconds)*time.Second)
 	hub := realtime.NewHub()
-	bookingService := booking.NewService(showtimeRepo, seatRepo, bookingRepo, movieRepo, seatLock, hub)
+	bookingService := booking.NewService(
+		showtimeRepo, seatRepo, bookingRepo, movieRepo,
+		seatLock, hub, producer, auditService,
+	)
 	booking.StartExpiryWorker(ctx, bookingService)
 
 	seatHandler := seat.NewHandler(bookingService)

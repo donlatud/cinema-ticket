@@ -67,3 +67,27 @@ Ensure `frontend/.env` includes:
 ```
 VITE_WS_URL=ws://localhost:8080
 ```
+
+## RabbitMQ + Audit Logs (Phase 7)
+
+Queues:
+
+| Queue | Trigger | Audit event |
+|-------|---------|-------------|
+| `booking.success` | Pay succeeds | `BOOKING_SUCCESS` |
+| `booking.timeout` | Lock expires | `BOOKING_TIMEOUT` |
+| `seat.released` | Cancel booking | `SEAT_RELEASED` |
+
+`SYSTEM_ERROR` is written directly to MongoDB when Redis lock infrastructure fails.
+
+## Phase 7 Test
+
+1. Set `RABBITMQ_URL` in `backend/.env` (CloudAMQP `amqps://...`)
+2. Restart backend: `go run ./cmd/server`
+3. Lock seats → Pay:
+   ```powershell
+   curl -X POST "$BASE/api/bookings/$BOOKING_ID/pay" -H "Authorization: Bearer $TOKEN"
+   ```
+4. Check server log for `mock notification: booking ... confirmed`
+5. Open MongoDB Compass → `audit_logs` collection → see `BOOKING_SUCCESS`
+6. CloudAMQP dashboard → Queues → messages published/consumed on `booking.success`

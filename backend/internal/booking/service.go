@@ -7,8 +7,10 @@ import (
 	"log"
 	"time"
 
+	"github.com/cinema-booking/backend/internal/admin"
 	"github.com/cinema-booking/backend/internal/lock"
 	"github.com/cinema-booking/backend/internal/model"
+	"github.com/cinema-booking/backend/internal/mq"
 	"github.com/cinema-booking/backend/internal/realtime"
 	"github.com/cinema-booking/backend/internal/repository"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -34,6 +36,8 @@ type Service struct {
 	movies    *repository.MovieRepository
 	lock      *lock.RedisLock
 	hub       *realtime.Hub
+	producer  *mq.Producer
+	audit     *admin.AuditService
 }
 
 func NewService(
@@ -43,6 +47,8 @@ func NewService(
 	movies *repository.MovieRepository,
 	seatLock *lock.RedisLock,
 	hub *realtime.Hub,
+	producer *mq.Producer,
+	audit *admin.AuditService,
 ) *Service {
 	return &Service{
 		showtimes: showtimes,
@@ -51,6 +57,8 @@ func NewService(
 		movies:    movies,
 		lock:      seatLock,
 		hub:       hub,
+		producer:  producer,
+		audit:     audit,
 	}
 }
 
@@ -131,6 +139,7 @@ func (s *Service) LockSeats(ctx context.Context, showtimeID, userID primitive.Ob
 			if errors.Is(err, lock.ErrLockNotAcquired) {
 				return nil, fmt.Errorf("%w: %s", ErrSeatUnavailable, seatNo)
 			}
+			s.logSystemError(ctx, &userID, &showtimeID, seatNo, err.Error())
 			return nil, err
 		}
 		lockTokens[seatNo] = token
@@ -196,6 +205,7 @@ func (s *Service) Pay(ctx context.Context, bookingID, userID primitive.ObjectID)
 
 	booking.Status = model.BookingPaid
 	booking.PaidAt = &now
+	s.publishBookingSuccess(ctx, booking)
 	return booking, nil
 }
 
@@ -215,6 +225,7 @@ func (s *Service) Cancel(ctx context.Context, bookingID, userID primitive.Object
 	s.broadcastSeats(booking.ShowtimeID, booking.SeatNos, model.SeatAvailable)
 
 	booking.Status = model.BookingExpired
+	s.publishSeatReleased(ctx, booking)
 	return booking, nil
 }
 
@@ -238,6 +249,7 @@ func (s *Service) ExpirePendingBookings(ctx context.Context) error {
 		s.broadcastSeats(booking.ShowtimeID, booking.SeatNos, model.SeatAvailable)
 		log.Printf("BOOKING_TIMEOUT booking_id=%s showtime_id=%s seats=%v",
 			booking.ID.Hex(), booking.ShowtimeID.Hex(), booking.SeatNos)
+		s.publishBookingTimeout(ctx, &booking)
 	}
 	return nil
 }
@@ -297,5 +309,41 @@ func (s *Service) broadcastSeats(showtimeID primitive.ObjectID, seatNos []string
 	showtimeHex := showtimeID.Hex()
 	for _, seatNo := range seatNos {
 		s.hub.BroadcastSeatUpdate(showtimeHex, seatNo, status)
+	}
+}
+
+func (s *Service) publishBookingSuccess(ctx context.Context, booking *model.Booking) {
+	if s.producer == nil {
+		return
+	}
+	if err := s.producer.PublishBookingSuccess(ctx, booking); err != nil {
+		log.Printf("publish booking.success: %v", err)
+	}
+}
+
+func (s *Service) publishBookingTimeout(ctx context.Context, booking *model.Booking) {
+	if s.producer == nil {
+		return
+	}
+	if err := s.producer.PublishBookingTimeout(ctx, booking); err != nil {
+		log.Printf("publish booking.timeout: %v", err)
+	}
+}
+
+func (s *Service) publishSeatReleased(ctx context.Context, booking *model.Booking) {
+	if s.producer == nil {
+		return
+	}
+	if err := s.producer.PublishSeatReleased(ctx, booking); err != nil {
+		log.Printf("publish seat.released: %v", err)
+	}
+}
+
+func (s *Service) logSystemError(ctx context.Context, userID, showtimeID *primitive.ObjectID, seatNo, detail string) {
+	if s.audit == nil {
+		return
+	}
+	if err := s.audit.Log(ctx, model.AuditSystemError, userID, showtimeID, seatNo, detail); err != nil {
+		log.Printf("audit SYSTEM_ERROR: %v", err)
 	}
 }
