@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/cinema-booking/backend/internal/model"
 	"go.mongodb.org/mongo-driver/bson"
@@ -41,6 +42,39 @@ func (r *ShowtimeRepository) Count(ctx context.Context) (int64, error) {
 
 func (r *ShowtimeRepository) FindAll(ctx context.Context) ([]model.Showtime, error) {
 	cursor, err := r.col.Find(ctx, bson.M{})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var showtimes []model.Showtime
+	if err := cursor.All(ctx, &showtimes); err != nil {
+		return nil, err
+	}
+	return showtimes, nil
+}
+
+func (r *ShowtimeRepository) FindByMovieID(ctx context.Context, movieID primitive.ObjectID) ([]model.Showtime, error) {
+	cursor, err := r.col.Find(ctx, bson.M{"movie_id": movieID})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var showtimes []model.Showtime
+	if err := cursor.All(ctx, &showtimes); err != nil {
+		return nil, err
+	}
+	return showtimes, nil
+}
+
+func (r *ShowtimeRepository) FindByStartDate(ctx context.Context, day time.Time) ([]model.Showtime, error) {
+	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	cursor, err := r.col.Find(ctx, bson.M{
+		"start_time": bson.M{"$gte": start, "$lt": end},
+	})
 	if err != nil {
 		return nil, err
 	}

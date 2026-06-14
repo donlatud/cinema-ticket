@@ -5,6 +5,7 @@ import (
 
 	"github.com/cinema-booking/backend/internal/auth"
 	bookinghandler "github.com/cinema-booking/backend/internal/booking"
+	"github.com/cinema-booking/backend/internal/admin"
 	"github.com/cinema-booking/backend/internal/model"
 	"github.com/cinema-booking/backend/internal/realtime"
 	"github.com/cinema-booking/backend/internal/seat"
@@ -17,6 +18,7 @@ func Setup(
 	seatHandler *seat.Handler,
 	bookingHandler *bookinghandler.Handler,
 	wsHandler *realtime.Handler,
+	adminHandler *admin.Handler,
 ) *gin.Engine {
 	r := gin.Default()
 	r.Use(corsMiddleware())
@@ -40,15 +42,10 @@ func Setup(
 	protected.GET("/bookings/my", bookingHandler.ListMy)
 
 	admin := api.Group("/admin", auth.AuthMiddleware(jwtService), auth.RequireRole(model.RoleAdmin))
-	registerAdminPlaceholder(admin)
+	admin.GET("/bookings", adminHandler.ListBookings)
+	admin.GET("/audit-logs", adminHandler.ListAuditLogs)
 
 	return r
-}
-
-func registerAdminPlaceholder(admin *gin.RouterGroup) {
-	admin.GET("/ping", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "admin access granted"})
-	})
 }
 
 func corsMiddleware() gin.HandlerFunc {

@@ -80,3 +80,17 @@ func (r *BookingRepository) FindExpiredPending(ctx context.Context, before time.
 	}
 	return bookings, nil
 }
+
+func (r *BookingRepository) FindAdmin(ctx context.Context, filter bson.M) ([]model.Booking, error) {
+	cursor, err := r.col.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var bookings []model.Booking
+	if err := cursor.All(ctx, &bookings); err != nil {
+		return nil, err
+	}
+	return bookings, nil
+}
