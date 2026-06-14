@@ -14,6 +14,12 @@ const router = createRouter({
       name: 'home',
       component: () => import('@/views/HomeView.vue'),
     },
+    {
+      path: '/showtimes/:id',
+      name: 'seatmap',
+      component: () => import('@/views/SeatMapView.vue'),
+      meta: { layout: 'seatmap' },
+    },
   ],
 })
 

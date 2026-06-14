@@ -16,6 +16,7 @@ type Config struct {
 	RedisPassword       string
 	RedisTLS            bool
 	LockTTLSeconds      int
+	RabbitMQURL         string
 }
 
 func Load() (*Config, error) {
@@ -61,6 +62,11 @@ func Load() (*Config, error) {
 		lockTTLSeconds = parsed
 	}
 
+	rabbitMQURL := os.Getenv("RABBITMQ_URL")
+	if rabbitMQURL == "" {
+		return nil, fmt.Errorf("RABBITMQ_URL is required")
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -75,5 +81,6 @@ func Load() (*Config, error) {
 		RedisPassword:       redisPassword,
 		RedisTLS:            useTLS,
 		LockTTLSeconds:      lockTTLSeconds,
+		RabbitMQURL:         rabbitMQURL,
 	}, nil
 }

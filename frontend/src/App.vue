@@ -3,11 +3,13 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
-const isAuthLayout = computed(() => route.meta.layout === 'auth')
+const layout = computed(() => route.meta.layout ?? 'default')
 </script>
 
 <template>
-  <router-view v-if="isAuthLayout" />
+  <router-view v-if="layout === 'auth'" />
+
+  <router-view v-else-if="layout === 'seatmap'" />
 
   <div v-else class="min-h-screen bg-gray-50 text-gray-900">
     <header class="border-b border-gray-200 bg-white px-4 py-4 sm:px-6">

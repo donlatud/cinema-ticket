@@ -53,3 +53,41 @@ $BASE = "http://localhost:8080"
 ```
 
 Expected: exactly one `201 Created`, the rest `409 Conflict`.
+
+## Phase 6 Test (WebSocket Real-time)
+
+1. Restart backend and frontend
+2. Open `http://localhost:5173/` → pick a showtime → **View seats**
+3. Open the **same seat map URL** in a second browser tab (or incognito)
+4. In tab A: select a seat → **Confirm seat selection**
+5. Tab B should show that seat turn **yellow (LOCKED)** without refreshing
+
+Ensure `frontend/.env` includes:
+
+```
+VITE_WS_URL=ws://localhost:8080
+```
+
+## RabbitMQ + Audit Logs (Phase 7)
+
+Queues:
+
+| Queue | Trigger | Audit event |
+|-------|---------|-------------|
+| `booking.success` | Pay succeeds | `BOOKING_SUCCESS` |
+| `booking.timeout` | Lock expires | `BOOKING_TIMEOUT` |
+| `seat.released` | Cancel booking | `SEAT_RELEASED` |
+
+`SYSTEM_ERROR` is written directly to MongoDB when Redis lock infrastructure fails.
+
+## Phase 7 Test
+
+1. Set `RABBITMQ_URL` in `backend/.env` (CloudAMQP `amqps://...`)
+2. Restart backend: `go run ./cmd/server`
+3. Lock seats → Pay:
+   ```powershell
+   curl -X POST "$BASE/api/bookings/$BOOKING_ID/pay" -H "Authorization: Bearer $TOKEN"
+   ```
+4. Check server log for `mock notification: booking ... confirmed`
+5. Open MongoDB Compass → `audit_logs` collection → see `BOOKING_SUCCESS`
+6. CloudAMQP dashboard → Queues → messages published/consumed on `booking.success`
