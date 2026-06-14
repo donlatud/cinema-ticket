@@ -6,10 +6,11 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
 
   redis:
     image: redis:7-alpine
@@ -23,20 +24,36 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: cinema
+      RABBITMQ_DEFAULT_PASS: cinema
     ports:
       - "5672:5672"
       - "15672:15672"
     healthcheck:
-      test: rabbitmq-diagnostics -q ping
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   backend:
     build: ./backend
     ports:
       - "8080:8080"
-    env_file: ./backend/.env
+    environment:
+      PORT: "8080"
+      MONGO_URI: mongodb://mongodb:27017/cinema
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ""
+      REDIS_TLS: "false"
+      LOCK_TTL_SECONDS: "300"
+      RABBITMQ_URL: amqp://cinema:cinema@rabbitmq:5672/
+      JWT_SECRET: dev-secret-change-in-production
+      FIREBASE_CREDENTIALS: /app/firebase-key.json
+      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
+    volumes:
+      - ./backend/firebase-key.json:/app/firebase-key.json:ro
     depends_on:
       mongodb:
         condition: service_healthy
@@ -44,13 +61,27 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ""
+        VITE_WS_URL: ""
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID}
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   mongo_data:
