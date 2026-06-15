@@ -2,6 +2,8 @@ package mq
 
 import (
 	"fmt"
+	"log"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -12,9 +14,20 @@ type Client struct {
 }
 
 func NewClient(url string) (*Client, error) {
-	conn, err := amqp.Dial(url)
+	var conn *amqp.Connection
+	var err error
+
+	const maxAttempts = 30
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		conn, err = amqp.Dial(url)
+		if err == nil {
+			break
+		}
+		log.Printf("rabbitmq not ready (attempt %d/%d): %v", attempt, maxAttempts, err)
+		time.Sleep(2 * time.Second)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("dial rabbitmq: %w", err)
+		return nil, fmt.Errorf("dial rabbitmq after %d attempts: %w", maxAttempts, err)
 	}
 
 	ch, err := conn.Channel()
