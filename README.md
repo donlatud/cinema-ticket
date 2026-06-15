@@ -165,11 +165,23 @@ git clone <repo-url> && cd cinema-booking
 cp .env.example .env
 # Fill VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID
 
+# 3b. (Optional) Preflight check — catches missing firebase-key.json before build
+.\scripts\docker-preflight.ps1   # PowerShell on Windows
+# bash: test -f backend/firebase-key.json && test -f .env
+
 # 4. Start everything
 docker compose up --build
 ```
 
 Open **http://localhost:3000**
+
+Tip: run detached so MongoDB checkpoint logs do not hide backend errors:
+
+```bash
+docker compose up -d --build
+docker compose ps          # STATUS column: all should be "healthy" or "running"
+docker compose logs backend --tail 50   # if frontend never starts, check here first
+```
 
 | Service | URL |
 |---------|-----|
@@ -269,6 +281,8 @@ Open the same seat map in two tabs → lock a seat in tab A → tab B shows LOCK
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
+| **MongoDB keeps logging `WT_VERB_CHECKPOINT`** | Normal WiredTiger checkpoint (not stuck / not an error) | Mongo is fine if `docker compose ps` shows `mongodb` as **healthy**. Backend/frontend block on **backend** health, not these logs |
+| **`backend` unhealthy** / dependency failed | Missing or invalid `firebase-key.json`; backend crashes before `/health` | Run `docker compose logs backend`. Ensure `backend/firebase-key.json` exists **as a file** (on Windows, Docker creates a **folder** if the file was missing — delete it and add the real JSON). Run `.\scripts\docker-preflight.ps1` |
 | Backend cannot connect to MongoDB in Docker | Using `localhost` instead of service name | Use `mongodb:27017` in compose env |
 | Redis lock fails | Redis not ready | Wait for healthcheck; check `REDIS_ADDR` |
 | Firebase verify fail | Wrong credentials path | Mount/copy `firebase-key.json`; set `FIREBASE_CREDENTIALS` |

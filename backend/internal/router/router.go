@@ -12,6 +12,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func healthHandler(c *gin.Context) {
+	if c.Request.Method == http.MethodHead {
+		c.Status(http.StatusOK)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
 func Setup(
 	authHandler *auth.Handler,
 	jwtService *auth.JWTService,
@@ -24,9 +32,8 @@ func Setup(
 	r := gin.Default()
 	r.Use(corsMiddleware(corsOrigins))
 
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	r.GET("/health", healthHandler)
+	r.HEAD("/health", healthHandler)
 	r.GET("/ws", wsHandler.ServeWS)
 
 	api := r.Group("/api")

@@ -9,5 +9,7 @@ FROM alpine:latest
 RUN apk add --no-cache wget
 WORKDIR /app
 COPY --from=builder /app/server /app/server
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 EXPOSE 8080
-CMD ["/app/server"]
+ENTRYPOINT ["/docker-entrypoint.sh"]
